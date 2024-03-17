@@ -8,6 +8,7 @@ import yaml
 import train_models
 import evaluate_models
 from src.commons import set_seed
+import os
 
 
 LOGGER = logging.getLogger()
@@ -22,8 +23,8 @@ LOGGER.addHandler(ch)
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    ASVSPOOF_DATASET_PATH = "../datasets/ASVspoof2021/DF"
-    IN_THE_WILD_DATASET_PATH = "../datasets/release_in_the_wild"
+    ASVSPOOF_DATASET_PATH = "datasets/ASVspoof2021/DF"
+    IN_THE_WILD_DATASET_PATH = "datasets/release_in_the_wild"
 
     parser.add_argument(
         "--asv_path",
@@ -100,13 +101,23 @@ def parse_args():
 
     parser.add_argument("--cpu", "-c", help="Force using cpu?", action="store_true")
 
+    default_add_loss = None
+    parser.add_argument('--add_loss',
+                         "-l", 
+                         help=f"ocsoftmax for one-class training (default: {default_add_loss})", 
+                         type=str, 
+                         default=default_add_loss,
+                         )
+
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    # TRAIN MODEL
 
+    current_path = os.path.abspath(".")
+    print(current_path)
+    # TRAIN MODEL
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
@@ -132,6 +143,8 @@ if __name__ == "__main__":
         epochs=args.epochs,
         model_dir=model_dir,
         config=config,
+        config_save_path="configs",
+        add_loss=args.add_loss 
     )
 
     with open(evaluation_config_path, "r") as f:

@@ -53,6 +53,7 @@ def train_nn(
     model_dir: Optional[Path] = None,
     amount_to_use: Tuple[Optional[int], Optional[int]] = (None, None),
     config_save_path: str = "configs",
+    add_loss: str = None
 ) -> Tuple[str, str]:
     logging.info("Loading data...")
     model_config = config["model"]
@@ -95,6 +96,7 @@ def train_nn(
         epochs=epochs,
         optimizer_kwargs=optimizer_config,
         use_scheduler=use_scheduler,
+        add_loss=add_loss 
     ).train(
         dataset=data_train,
         model=current_model,
@@ -159,13 +161,14 @@ def main(args):
         epochs=args.epochs,
         model_dir=model_dir,
         config=config,
+        add_loss=args.add_loss
     )
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    ASVSPOOF_DATASET_PATH = "../datasets/ASVspoof2021/DF"
+    ASVSPOOF_DATASET_PATH = "datasets/ASVspoof2021/DF"
 
     parser.add_argument(
         "--asv_path",
@@ -227,6 +230,14 @@ def parse_args():
     )
 
     parser.add_argument("--cpu", "-c", help="Force using cpu?", action="store_true")
+
+    default_add_loss = None
+    parser.add_argument('--add_loss',
+                         "-l", 
+                         help=f"ocsoftmax for one-class training (default: {default_add_loss})", 
+                         type=str, 
+                         default=default_add_loss,
+                         )
 
     return parser.parse_args()
 

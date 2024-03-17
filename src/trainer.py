@@ -5,6 +5,42 @@ from typing import Callable, List, Optional
 
 import torch
 from torch.utils.data import DataLoader
+import torch.nn as nn
+import torch.nn.functional as F
+
+"""OCSoftmax function taken from https://github.com/yzyouzhang/AIR-ASVspoof/blob/master/loss.py"""
+
+class OCSoftmax(nn.Module):
+    def __init__(self, feat_dim=2, r_real=0.9, r_fake=0.5, alpha=20.0):
+        super(OCSoftmax, self).__init__()
+        self.feat_dim = feat_dim
+        self.r_real = r_real
+        self.r_fake = r_fake
+        self.alpha = alpha
+        self.center = nn.Parameter(torch.randn(1, self.feat_dim))
+        nn.init.kaiming_uniform_(self.center, 0.25)
+        self.softplus = nn.Softplus()
+
+    def forward(self, x, labels):
+        """
+        Args:
+            x: feature matrix with shape (batch_size, feat_dim).
+            labels: ground truth labels with shape (batch_size).
+        """
+        w = F.normalize(self.center, p=2, dim=1)
+        x = F.normalize(x, p=2, dim=1)
+
+        scores = x @ w.transpose(0,1)
+        output_scores = scores.clone()
+
+        scores[labels == 0] = self.r_real - scores[labels == 0]
+        scores[labels == 1] = scores[labels == 1] - self.r_fake
+
+        loss = self.softplus(self.alpha * scores).mean()
+
+        return loss, output_scores.squeeze(1)
+
+
 
 
 LOGGER = logging.getLogger(__name__)
@@ -19,6 +55,7 @@ class Trainer:
         optimizer_fn: Callable = torch.optim.Adam,
         optimizer_kwargs: dict = {"lr": 1e-3},
         use_scheduler: bool = False,
+        add_loss: str = None
     ) -> None:
         self.epochs = epochs
         self.batch_size = batch_size
@@ -27,9 +64,11 @@ class Trainer:
         self.optimizer_kwargs = optimizer_kwargs
         self.epoch_test_losses: List[float] = []
         self.use_scheduler = use_scheduler
+        self.add_loss = add_loss
 
 
 def forward_and_loss(model, criterion, batch_x, batch_y, **kwargs):
+    # TODO: may have to get another value from model for ocsoftmax instead of batch_out [8, 1]
     batch_out = model(batch_x)
     batch_loss = criterion(batch_out, batch_y)
     return batch_out, batch_loss
@@ -70,6 +109,11 @@ class GDTrainer(Trainer):
         criterion = torch.nn.BCEWithLogitsLoss()
         optim = self.optimizer_fn(model.parameters(), **self.optimizer_kwargs)
 
+        if self.add_loss == "ocsoftmax":
+            ocsoftmax = OCSoftmax(feat_dim=2).to(self.device)
+            ocsoftmax.train()
+            ocsoftmax_optimzer = torch.optim.SGD(ocsoftmax.parameters(), lr=self.optimizer_kwargs)
+
         best_model = None
         best_acc = 0
 
@@ -96,35 +140,67 @@ class GDTrainer(Trainer):
             num_total = 0.0
             model.train()
 
-            for i, (batch_x, _, batch_y) in enumerate(train_loader):
-                batch_size = batch_x.size(0)
-                num_total += batch_size
-                batch_x = batch_x.to(self.device)
+            if self.add_loss == None:
+                for i, (batch_x, _, batch_y) in enumerate(train_loader):
+                    batch_size = batch_x.size(0)
+                    num_total += batch_size
+                    batch_x = batch_x.to(self.device)
 
-                batch_y = batch_y.unsqueeze(1).type(torch.float32).to(self.device)
+                    batch_y = batch_y.unsqueeze(1).type(torch.float32).to(self.device)
 
-                batch_out, batch_loss = forward_and_loss_fn(
-                    model, criterion, batch_x, batch_y, use_cuda=use_cuda
-                )
-                batch_pred = (torch.sigmoid(batch_out) + 0.5).int()
-                num_correct += (batch_pred == batch_y.int()).sum(dim=0).item()
-
-                running_loss += batch_loss.item() * batch_size
-
-                if i % 100 == 0:
-                    LOGGER.info(
-                        f"[{epoch:04d}][{i:05d}]: {running_loss / num_total} {num_correct/num_total*100}"
+                    batch_out, batch_loss = forward_and_loss_fn(
+                        model, criterion, batch_x, batch_y, use_cuda=use_cuda
                     )
 
-                optim.zero_grad()
-                batch_loss.backward()
-                optim.step()
-                if self.use_scheduler:
-                    scheduler.step()
+                    batch_pred = (torch.sigmoid(batch_out) + 0.5).int()
+                    num_correct += (batch_pred == batch_y.int()).sum(dim=0).item()
+
+                    running_loss += batch_loss.item() * batch_size
+
+                    if i % 100 == 0:
+                        LOGGER.info(
+                            f"[{epoch:04d}][{i:05d}]: {running_loss / num_total} {num_correct/num_total*100}"
+                        )
+                    optim.zero_grad()
+                    batch_loss.backward()
+                    optim.step()
+                    if self.use_scheduler:
+                        scheduler.step()
+
+
+            elif self.add_loss == "ocsoftmax":
+                for i, (batch_x, _, batch_y) in enumerate(train_loader):
+                    batch_size = batch_x.size(0)
+                    num_total += batch_size
+                    batch_x = batch_x.to(self.device)
+
+                    batch_y = batch_y.unsqueeze(1).type(torch.float32).to(self.device)
+                    batch_out, batch_loss = forward_and_loss_fn(
+                        model, criterion, batch_x, batch_y, use_cuda=use_cuda
+                    )
+                    ocsoftmaxloss, _ = ocsoftmax(batch_out, batch_y)
+                    batch_loss = ocsoftmaxloss
+
+                    batch_pred = (torch.sigmoid(batch_out) + 0.5).int()
+                    num_correct += (batch_pred == batch_y.int()).sum(dim=0).item()
+
+                    running_loss += batch_loss.item() * batch_size
+
+                    if i % 100 == 0:
+                        LOGGER.info(
+                            f"[{epoch:04d}][{i:05d}]: {running_loss / num_total} {num_correct/num_total*100}"
+                        )
+                    optim.zero_grad()
+                    ocsoftmax_optimzer.zero_grad()
+                    # trainlossDict[args.add_loss].append(ocsoftmaxloss.item())
+                    batch_loss.backward()
+                    optim.step()
+                    ocsoftmax_optimzer.step()
+                    if self.use_scheduler:
+                        scheduler.step()
 
             running_loss /= num_total
             train_accuracy = (num_correct / num_total) * 100
-
             LOGGER.info(
                 f"Epoch [{epoch+1}/{self.epochs}]: train/loss: {running_loss}, train/accuracy: {train_accuracy}"
             )
