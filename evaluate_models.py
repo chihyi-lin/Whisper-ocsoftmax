@@ -28,6 +28,7 @@ def get_dataset(
 
 def evaluate_nn(
     model_paths: List[Path],
+    loss_model_checkpoint_path: List[Path],
     datasets_paths: List[Union[Path, str]],
     model_config: Dict,
     device: str,
@@ -47,7 +48,7 @@ def evaluate_nn(
     if len(model_paths):
         model.load_state_dict(torch.load(model_paths))
     model = model.to(device)
-
+    # TODO: load ocsoftmax model
     data_val = get_dataset(
         datasets_paths=datasets_paths,
         amount_to_use=amount_to_use,
@@ -141,8 +142,14 @@ def main(args):
     # fix all seeds - this should not actually change anything
     commons.set_seed(seed)
 
+    loss_model_path = ""
+    if "loss_model_checkpoint" not in config:
+        loss_model_path = None
+    else:
+        loss_model_path = config["loss_model_checkpoint"].get("path", [])
     evaluate_nn(
         model_paths=config["checkpoint"].get("path", []),
+        loss_model_checkpoint_path=loss_model_path,
         datasets_paths=[
             args.in_the_wild_path,
         ],
@@ -156,7 +163,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # If assigned as None, then it won't be taken into account
-    IN_THE_WILD_DATASET_PATH = "../datasets/release_in_the_wild"
+    IN_THE_WILD_DATASET_PATH = "/datasets/release_in_the_wild"
 
     parser.add_argument(
         "--in_the_wild_path", type=str, default=IN_THE_WILD_DATASET_PATH

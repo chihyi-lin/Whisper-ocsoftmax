@@ -109,12 +109,14 @@ def parse_args():
                          default=default_add_loss,
                          )
 
+    parser.add_argument("--gpu", type=str, help="GPU index", default="1")
+   
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-
+    
     current_path = os.path.abspath(".")
     print(current_path)
     # TRAIN MODEL
@@ -124,7 +126,8 @@ if __name__ == "__main__":
     seed = config["data"].get("seed", 42)
     # fix all seeds
     set_seed(seed)
-
+    
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     if not args.cpu and torch.cuda.is_available():
         device = "cuda"
     else:
@@ -133,7 +136,7 @@ if __name__ == "__main__":
     model_dir = Path(args.ckpt)
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    evaluation_config_path, model_path = train_models.train_nn(
+    evaluation_config_path, model_path, loss_model_checkpoint_path, optim_checkpoint_path, ocsoftmax_optim_checkpoint_path = train_models.train_nn(
         datasets_paths=[
             args.asv_path,
         ],
@@ -150,8 +153,18 @@ if __name__ == "__main__":
     with open(evaluation_config_path, "r") as f:
         config = yaml.safe_load(f)
 
+    loss_model_path = ""
+    if "loss_model_checkpoint" not in config:
+        loss_model_path = None
+    else:
+        loss_model_path = config["loss_model_checkpoint"].get("path", [])
+        
+    # TODO: assign values to the following function
     evaluate_models.evaluate_nn(
         model_paths=config["checkpoint"].get("path", []),
+        loss_model_checkpoint_path=loss_model_path,
+        optim_checkpoint_path,
+        ocsoftmax_optim_checkpoint_path
         batch_size=args.batch_size,
         datasets_paths=[args.in_the_wild_path],
         model_config=config["model"],
