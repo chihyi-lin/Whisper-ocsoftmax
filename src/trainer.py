@@ -132,8 +132,6 @@ class GDTrainer(Trainer):
         best_model = None
         best_loss_model = None
         best_eer = 1e8
-        best_optim = None
-        best_loss_optim = None
         
         for epoch in range(self.epochs):
             LOGGER.info(f"Epoch num: {epoch}")
@@ -212,7 +210,6 @@ class GDTrainer(Trainer):
             model.eval()
             y_pred = torch.Tensor([]).to(self.device)
             y = torch.Tensor([]).to(self.device)
-            # y_pred_label = torch.Tensor([]).to(self.device)
 
             for batch_x, _, batch_y in test_loader:
                 batch_size = batch_x.size(0)
@@ -225,16 +222,14 @@ class GDTrainer(Trainer):
                 batch_y = batch_y.unsqueeze(1).type(torch.float32).to(self.device)
                 batch_loss = criterion(batch_pred, batch_y)
 
-                test_running_loss += batch_loss.item() * batch_size
-
                 if self.add_loss == None:
                     batch_pred = torch.sigmoid(batch_pred)
-                    # batch_pred_label = (batch_pred + 0.5).int()
                 elif self.add_loss == "ocsoftmax":
                     ocsoftmaxloss, batch_pred = ocsoftmax(feat, batch_y)
+                    batch_loss = ocsoftmaxloss
                 
+                test_running_loss += batch_loss.item() * batch_size
                 y_pred = torch.concat([y_pred, batch_pred.detach()], dim=0)
-                # y_pred_label = torch.concat([y_pred_label, batch_pred_label.detach()], dim=0)
                 y = torch.concat([y, batch_y.detach()], dim=0)
 
             if num_total == 0:
@@ -254,21 +249,17 @@ class GDTrainer(Trainer):
 
             if best_model is None or val_eer < best_eer:
                 best_eer = val_eer
-                # TODO: save the model checkpoint and ocsoftmax checkpoint
                 best_model = deepcopy(model.state_dict())
-                best_optim = deepcopy(optim.state_dict())
                 if self.add_loss == "ocsoftmax":
                     best_loss_model = deepcopy(ocsoftmax.state_dict())
-                    best_loss_optim = deepcopy(ocsoftmax_optimzer.state_dict())
 
             LOGGER.info(
                 f"[{epoch:04d}]: train/loss: {running_loss} - test/loss: {test_running_loss} - test/eer: {val_eer:.4f}"
             )
 
         model.load_state_dict(best_model)
-        optim.load_state_dict(best_optim)
+
         if self.add_loss == "ocsoftmax":
             ocsoftmax.load_state_dict(best_loss_model)
-            ocsoftmax_optimzer.load_state_dict(best_loss_optim)
 
-        return model, ocsoftmax, best_optim, best_loss_optim
+        return model, ocsoftmax

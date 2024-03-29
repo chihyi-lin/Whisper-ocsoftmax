@@ -17,19 +17,14 @@ import os
 def save_model(
     model: torch.nn.Module,
     loss_model,
-    best_optim, 
-    best_loss_optim,
     model_dir: Union[Path, str],
     name: str,
 ) -> None:
     full_model_dir = Path(f"{model_dir}/{name}")
     full_model_dir.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), f"{full_model_dir}/ckpt.pth")
-    torch.save(best_optim.state_dict(), f"{full_model_dir}/optim_ckpt.pth")
     if loss_model != None:
-        torch.save(loss_model.state_dict(), f"{full_model_dir}/ocsoftmax_ckpt.pth")
-        torch.save(best_loss_optim.state_dict(), f"{full_model_dir}/ocsoftmax_optim_ckpt.pth")
-    
+        torch.save(loss_model.state_dict(), f"{full_model_dir}/ocsoftmax_ckpt.pth")    
 
 
 def get_datasets(
@@ -99,7 +94,7 @@ def train_nn(
 
     use_scheduler = "rawnet3" in model_name.lower()
 
-    current_model, loss_model, best_optim, best_loss_optim = GDTrainer(
+    current_model, loss_model = GDTrainer(
         device=device,
         batch_size=batch_size,
         epochs=epochs,
@@ -117,31 +112,24 @@ def train_nn(
         save_model(
             model=current_model,
             loss_model=loss_model,
-            best_optim=best_optim, 
-            best_loss_optim=best_loss_optim,
             model_dir=model_dir,
             name=save_name,
         )
         checkpoint_path = str(model_dir.resolve() / save_name / "ckpt.pth")
-        optim_checkpoint_path = str(model_dir.resolve() / save_name / "optim_ckpt.pth")
         if loss_model != None:
             loss_model_checkpoint_path = str(model_dir.resolve() / save_name / "ocsoftmax_ckpt.pth")
-            ocsoftmax_optim_checkpoint_path = str(model_dir.resolve() / save_name / "ocsoftmax_optim_ckpt.pth")
-
 
     # Save config for testing
     if model_dir is not None:
         config["checkpoint"] = {"path": checkpoint_path}
-        config["optim_checkpoint"] = {"path": optim_checkpoint_path}
         if loss_model != None:
             config["loss_model_checkpoint"] = {"path": loss_model_checkpoint_path}
-            config["loss_model_optim_checkpoint"] = {"path": ocsoftmax_optim_checkpoint_path}
         config_name = f"model__{model_name}__{timestamp}.yaml"
         config_save_path = str(Path(config_save_path) / config_name)
         with open(config_save_path, "w") as f:
             yaml.dump(config, f)
         logging.info("Test config saved at location '{}'!".format(config_save_path))
-    return config_save_path, checkpoint_path, loss_model_checkpoint_path, optim_checkpoint_path, ocsoftmax_optim_checkpoint_path
+    return config_save_path, checkpoint_path, loss_model_checkpoint_path
 
 
 def main(args):
@@ -161,7 +149,6 @@ def main(args):
     # fix all seeds
     set_seed(seed)
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     if not args.cpu and torch.cuda.is_available():
         device = "cuda"
     else:
@@ -261,7 +248,7 @@ def parse_args():
                          default=default_add_loss,
                          )
 
-    parser.add_argument("--gpu", type=str, help="GPU index", default="1")
+    parser.add_argument("--gpu", type=str, help="GPU index (default: {default})", default="1")
 
     return parser.parse_args()
 
