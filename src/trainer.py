@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.nn.functional as F
-from src.metrics import calculate_eer
+from src.metrics import calculate_eer, compute_ocsoftmax_eer
 from sklearn.metrics import roc_auc_score
 
 """OCSoftmax function adapted from https://github.com/yzyouzhang/AIR-ASVspoof/blob/master/loss.py"""
@@ -44,7 +44,11 @@ class OCSoftmax(nn.Module):
 
 
 LOGGER = logging.getLogger(__name__)
-
+file_handler = logging.FileHandler('./trained_models/training.log')
+file_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+LOGGER.addHandler(file_handler)
 
 class Trainer:
     def __init__(
@@ -236,15 +240,19 @@ class GDTrainer(Trainer):
                 num_total = 1
             test_running_loss /= num_total
 
-            # For EER flip values, following original evaluation implementation
-            y_for_eer = 1 - y
-            thresh, val_eer, fpr, tpr = calculate_eer(
-                y=y_for_eer.cpu().numpy(),
-                y_score=y_pred.cpu().numpy(),
-            )
+            # EER for softmax 
+            if self.add_loss == None:
+                y_for_eer = 1 - y
+                thresh, val_eer, fpr, tpr = calculate_eer(
+                    y=y_for_eer.cpu().numpy(),
+                    y_score=y_pred.cpu().numpy(),
+                )
+            # EER for ocsoftmax
+            else:
+                val_eer, thresh = compute_ocsoftmax_eer(y=y.squeeze(1).cpu().numpy(), y_score=y_pred.cpu().numpy())
 
             LOGGER.info(
-                f"Epoch [{epoch+1}/{self.epochs}]: test/loss: {test_running_loss}, test/eer: {val_eer:.4f}"
+                f"Epoch [{epoch+1}/{self.epochs}]: test/loss: {test_running_loss}, test/eer: {val_eer:.4f}, threshold: {thresh:.4f}"
             )
 
             if best_model is None or val_eer < best_eer:
@@ -254,7 +262,7 @@ class GDTrainer(Trainer):
                     best_loss_model = deepcopy(ocsoftmax.state_dict())
 
             LOGGER.info(
-                f"[{epoch:04d}]: train/loss: {running_loss} - test/loss: {test_running_loss} - test/eer: {val_eer:.4f}"
+                f"[{epoch:04d}]: train/loss: {running_loss} - test/loss: {test_running_loss} - test/eer: {val_eer:.4f} - threshold: {thresh:.4f}"
             )
 
         model.load_state_dict(best_model)

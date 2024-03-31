@@ -106,25 +106,31 @@ def evaluate_nn(
     # precision, recall, f1_score, support = precision_recall_fscore_support(
     #     y.cpu().numpy(), y_pred_label.cpu().numpy(), average="binary", beta=1.0
     # )
-    auc_score = roc_auc_score(y_true=y.cpu().numpy(), y_score=y_pred.cpu().numpy())
+    # auc_score = roc_auc_score(y_true=y.cpu().numpy(), y_score=y_pred.cpu().numpy())
 
-    # For EER flip values, following original evaluation implementation
-    y_for_eer = 1 - y
+    # EER for softmax
+    if loss_model_path == None:
+        y_for_eer = 1 - y
 
-    thresh, eer, fpr, tpr = metrics.calculate_eer(
-        y=y_for_eer.cpu().numpy(),
-        y_score=y_pred.cpu().numpy(),
-    )
+        thresh, eer, fpr, tpr = metrics.calculate_eer(
+            y=y_for_eer.cpu().numpy(),
+            y_score=y_pred.cpu().numpy(),
+        )
+    # EER for ocsoftmax
+    else:
+        eer, thresh = metrics.compute_ocsoftmax_eer(
+            y=y.cpu().numpy(),
+            y_score=y_pred.cpu().numpy())
 
     eer_label = f"eval/eer"
     # accuracy_label = f"eval/accuracy"
     # precision_label = f"eval/precision"
     # recall_label = f"eval/recall"
     # f1_label = f"eval/f1_score"
-    auc_label = f"eval/auc"
+    # auc_label = f"eval/auc"
 
     logging.info(
-        f"{eer_label}: {eer:.4f}, {auc_label}: {auc_score:.4f}"
+        f"{eer_label}: {eer:.4f}, threshold: {thresh:.4f}"
     )
 
 
