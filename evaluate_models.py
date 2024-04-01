@@ -13,7 +13,8 @@ from src import metrics, commons
 from src.models import models
 from src.datasets.base_dataset import SimpleAudioFakeDataset
 from src.datasets.in_the_wild_dataset import InTheWildDataset
-
+from src.trainer import OCSoftmax
+import os
 
 def get_dataset(
     datasets_paths: List[Union[Path, str]],
@@ -28,6 +29,7 @@ def get_dataset(
 
 def evaluate_nn(
     model_paths: List[Path],
+    loss_model_path: List[Path],
     datasets_paths: List[Union[Path, str]],
     model_config: Dict,
     device: str,
@@ -47,6 +49,11 @@ def evaluate_nn(
     if len(model_paths):
         model.load_state_dict(torch.load(model_paths))
     model = model.to(device)
+    # Load ocsoftmax model
+    if len(loss_model_path):
+        ocsoftmax = OCSoftmax(feat_dim=16).to(device)
+        ocsoftmax.load_state_dict(torch.load(loss_model_path))
+    ocsoftmax = ocsoftmax.to(device)
 
     data_val = get_dataset(
         datasets_paths=datasets_paths,
@@ -65,12 +72,12 @@ def evaluate_nn(
     )
 
     batches_number = len(data_val) // batch_size
-    num_correct = 0.0
+    # num_correct = 0.0
     num_total = 0.0
 
     y_pred = torch.Tensor([]).to(device)
     y = torch.Tensor([]).to(device)
-    y_pred_label = torch.Tensor([]).to(device)
+    # y_pred_label = torch.Tensor([]).to(device)
 
     for i, (batch_x, _, batch_y) in enumerate(test_loader):
         model.eval()
@@ -82,40 +89,48 @@ def evaluate_nn(
             batch_y = batch_y.to(device)
             num_total += batch_x.size(0)
 
-            batch_pred = model(batch_x).squeeze(1)
+            feat, batch_pred = model(batch_x)
             batch_pred = torch.sigmoid(batch_pred)
             batch_pred_label = (batch_pred + 0.5).int()
+            # num_correct += (batch_pred_label == batch_y.int()).sum(dim=0).item()
 
-            num_correct += (batch_pred_label == batch_y.int()).sum(dim=0).item()
+            if loss_model_path != None:
+                ocsoftmaxloss, batch_pred = ocsoftmax(feat, batch_y)
 
-            y_pred = torch.concat([y_pred, batch_pred], dim=0)
-            y_pred_label = torch.concat([y_pred_label, batch_pred_label], dim=0)
-            y = torch.concat([y, batch_y], dim=0)
+            y_pred = torch.concat([y_pred, batch_pred.detach()], dim=0)
+            # y_pred_label = torch.concat([y_pred_label, batch_pred_label], dim=0)
+            y = torch.concat([y, batch_y.detach()], dim=0)
 
-    eval_accuracy = (num_correct / num_total) * 100
+    # eval_accuracy = (num_correct / num_total) * 100
 
-    precision, recall, f1_score, support = precision_recall_fscore_support(
-        y.cpu().numpy(), y_pred_label.cpu().numpy(), average="binary", beta=1.0
-    )
-    auc_score = roc_auc_score(y_true=y.cpu().numpy(), y_score=y_pred.cpu().numpy())
+    # precision, recall, f1_score, support = precision_recall_fscore_support(
+    #     y.cpu().numpy(), y_pred_label.cpu().numpy(), average="binary", beta=1.0
+    # )
+    # auc_score = roc_auc_score(y_true=y.cpu().numpy(), y_score=y_pred.cpu().numpy())
 
-    # For EER flip values, following original evaluation implementation
-    y_for_eer = 1 - y
+    # EER for softmax
+    if loss_model_path == None:
+        y_for_eer = 1 - y
 
-    thresh, eer, fpr, tpr = metrics.calculate_eer(
-        y=y_for_eer.cpu().numpy(),
-        y_score=y_pred.cpu().numpy(),
-    )
+        thresh, eer, fpr, tpr = metrics.calculate_eer(
+            y=y_for_eer.cpu().numpy(),
+            y_score=y_pred.cpu().numpy(),
+        )
+    # EER for ocsoftmax
+    else:
+        eer, thresh = metrics.compute_ocsoftmax_eer(
+            y=y.cpu().numpy(),
+            y_score=y_pred.cpu().numpy())
 
     eer_label = f"eval/eer"
-    accuracy_label = f"eval/accuracy"
-    precision_label = f"eval/precision"
-    recall_label = f"eval/recall"
-    f1_label = f"eval/f1_score"
-    auc_label = f"eval/auc"
+    # accuracy_label = f"eval/accuracy"
+    # precision_label = f"eval/precision"
+    # recall_label = f"eval/recall"
+    # f1_label = f"eval/f1_score"
+    # auc_label = f"eval/auc"
 
     logging.info(
-        f"{eer_label}: {eer:.4f}, {accuracy_label}: {eval_accuracy:.4f}, {precision_label}: {precision:.4f}, {recall_label}: {recall:.4f}, {f1_label}: {f1_score:.4f}, {auc_label}: {auc_score:.4f}"
+        f"{eer_label}: {eer:.4f}, threshold: {thresh:.4f}"
     )
 
 
@@ -141,8 +156,14 @@ def main(args):
     # fix all seeds - this should not actually change anything
     commons.set_seed(seed)
 
+    loss_model_path = ""
+    if "loss_model_checkpoint" not in config:
+        loss_model_path = None
+    else:
+        loss_model_path = config["loss_model_checkpoint"].get("path", [])
     evaluate_nn(
         model_paths=config["checkpoint"].get("path", []),
+        loss_model_path=loss_model_path,
         datasets_paths=[
             args.in_the_wild_path,
         ],
@@ -156,7 +177,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # If assigned as None, then it won't be taken into account
-    IN_THE_WILD_DATASET_PATH = "../datasets/release_in_the_wild"
+    IN_THE_WILD_DATASET_PATH = "datasets/release_in_the_wild"
 
     parser.add_argument(
         "--in_the_wild_path", type=str, default=IN_THE_WILD_DATASET_PATH

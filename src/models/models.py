@@ -7,7 +7,8 @@ from src.models import (
     rawnet3,
     whisper_lcnn,
     meso_net,
-    whisper_meso_net
+    whisper_meso_net, 
+    resnet
 )
 
 

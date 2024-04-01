@@ -108,11 +108,12 @@ class MesoInception4(nn.Module):
         x = self.dropout(x)
 
         x = nn.AdaptiveAvgPool1d(self.fc1_dim)(x)
-        x = self.fc1(x) #(Batch, 16)  ### <-- o tu
+        feat = self.fc1(x) #(Batch, 16)  ### <-- o tu
+        x = feat
         x = self.leakyrelu(x)
         x = self.dropout(x)
         x = self.fc2(x)
-        return x
+        return feat, x
 
 
 class FrontendMesoInception4(MesoInception4):

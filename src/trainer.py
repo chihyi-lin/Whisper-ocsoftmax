@@ -7,8 +7,10 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.nn.functional as F
+from src.metrics import calculate_eer, compute_ocsoftmax_eer
+from sklearn.metrics import roc_auc_score
 
-"""OCSoftmax function taken from https://github.com/yzyouzhang/AIR-ASVspoof/blob/master/loss.py"""
+"""OCSoftmax function adapted from https://github.com/yzyouzhang/AIR-ASVspoof/blob/master/loss.py"""
 
 class OCSoftmax(nn.Module):
     def __init__(self, feat_dim=2, r_real=0.9, r_fake=0.5, alpha=20.0):
@@ -41,10 +43,12 @@ class OCSoftmax(nn.Module):
         return loss, output_scores.squeeze(1)
 
 
-
-
 LOGGER = logging.getLogger(__name__)
-
+file_handler = logging.FileHandler('./trained_models/training.log')
+file_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+LOGGER.addHandler(file_handler)
 
 class Trainer:
     def __init__(
@@ -68,13 +72,13 @@ class Trainer:
 
 
 def forward_and_loss(model, criterion, batch_x, batch_y, **kwargs):
-    # TODO: may have to get another value from model for ocsoftmax instead of batch_out [8, 1]
-    batch_out = model(batch_x)
+    # get "feat" [8, 16] from model for ocsoftmax instead of batch_out [8, 1]
+    feat, batch_out = model(batch_x)
     batch_loss = criterion(batch_out, batch_y)
-    return batch_out, batch_loss
-
+    return feat, batch_out, batch_loss
 
 class GDTrainer(Trainer):
+
     def train(
         self,
         dataset: torch.utils.data.Dataset,
@@ -110,12 +114,9 @@ class GDTrainer(Trainer):
         optim = self.optimizer_fn(model.parameters(), **self.optimizer_kwargs)
 
         if self.add_loss == "ocsoftmax":
-            ocsoftmax = OCSoftmax(feat_dim=2).to(self.device)
+            ocsoftmax = OCSoftmax(feat_dim=16).to(self.device)  # feat_dim == feat.size(1)
             ocsoftmax.train()
-            ocsoftmax_optimzer = torch.optim.SGD(ocsoftmax.parameters(), lr=self.optimizer_kwargs)
-
-        best_model = None
-        best_acc = 0
+            ocsoftmax_optimzer = torch.optim.SGD(ocsoftmax.parameters(), lr=self.optimizer_kwargs["lr"])
 
         LOGGER.info(f"Starting training for {self.epochs} epochs!")
 
@@ -131,12 +132,16 @@ class GDTrainer(Trainer):
                 # verbose=True,
             )
         use_cuda = self.device != "cpu"
-
+        
+        best_model = None
+        best_loss_model = None
+        best_eer = 1e8
+        
         for epoch in range(self.epochs):
             LOGGER.info(f"Epoch num: {epoch}")
 
             running_loss = 0
-            num_correct = 0.0
+            # num_correct = 0.0
             num_total = 0.0
             model.train()
 
@@ -148,18 +153,18 @@ class GDTrainer(Trainer):
 
                     batch_y = batch_y.unsqueeze(1).type(torch.float32).to(self.device)
 
-                    batch_out, batch_loss = forward_and_loss_fn(
+                    feat, batch_out, batch_loss = forward_and_loss_fn(
                         model, criterion, batch_x, batch_y, use_cuda=use_cuda
                     )
 
                     batch_pred = (torch.sigmoid(batch_out) + 0.5).int()
-                    num_correct += (batch_pred == batch_y.int()).sum(dim=0).item()
+                    # num_correct += (batch_pred == batch_y.int()).sum(dim=0).item()
 
                     running_loss += batch_loss.item() * batch_size
 
                     if i % 100 == 0:
                         LOGGER.info(
-                            f"[{epoch:04d}][{i:05d}]: {running_loss / num_total} {num_correct/num_total*100}"
+                            f"[{epoch:04d}][{i:05d}]: {running_loss / num_total}"
                         )
                     optim.zero_grad()
                     batch_loss.backward()
@@ -173,43 +178,42 @@ class GDTrainer(Trainer):
                     batch_size = batch_x.size(0)
                     num_total += batch_size
                     batch_x = batch_x.to(self.device)
-
                     batch_y = batch_y.unsqueeze(1).type(torch.float32).to(self.device)
-                    batch_out, batch_loss = forward_and_loss_fn(
+
+                    feat, batch_out, batch_loss = forward_and_loss_fn(
                         model, criterion, batch_x, batch_y, use_cuda=use_cuda
                     )
-                    ocsoftmaxloss, _ = ocsoftmax(batch_out, batch_y)
+                    ocsoftmaxloss, _ = ocsoftmax(feat, batch_y)
                     batch_loss = ocsoftmaxloss
-
-                    batch_pred = (torch.sigmoid(batch_out) + 0.5).int()
-                    num_correct += (batch_pred == batch_y.int()).sum(dim=0).item()
+                    # batch_pred = (torch.sigmoid(batch_out) + 0.5).int()
+                    # num_correct += (batch_pred == batch_y.int()).sum(dim=0).item()
 
                     running_loss += batch_loss.item() * batch_size
 
                     if i % 100 == 0:
                         LOGGER.info(
-                            f"[{epoch:04d}][{i:05d}]: {running_loss / num_total} {num_correct/num_total*100}"
+                            f"[{epoch:04d}][{i:05d}]: {running_loss / num_total}"
                         )
                     optim.zero_grad()
                     ocsoftmax_optimzer.zero_grad()
-                    # trainlossDict[args.add_loss].append(ocsoftmaxloss.item())
                     batch_loss.backward()
                     optim.step()
                     ocsoftmax_optimzer.step()
+
                     if self.use_scheduler:
                         scheduler.step()
 
             running_loss /= num_total
-            train_accuracy = (num_correct / num_total) * 100
             LOGGER.info(
-                f"Epoch [{epoch+1}/{self.epochs}]: train/loss: {running_loss}, train/accuracy: {train_accuracy}"
+                f"Epoch [{epoch+1}/{self.epochs}]: train/loss: {running_loss}"
             )
 
             test_running_loss = 0.0
-            num_correct = 0.0
             num_total = 0.0
+            val_eer = 0
             model.eval()
-            eer_val = 0
+            y_pred = torch.Tensor([]).to(self.device)
+            y = torch.Tensor([]).to(self.device)
 
             for batch_x, _, batch_y in test_loader:
                 batch_size = batch_x.size(0)
@@ -217,33 +221,53 @@ class GDTrainer(Trainer):
                 batch_x = batch_x.to(self.device)
 
                 with torch.no_grad():
-                    batch_pred = model(batch_x)
+                    feat, batch_pred = model(batch_x)
 
                 batch_y = batch_y.unsqueeze(1).type(torch.float32).to(self.device)
                 batch_loss = criterion(batch_pred, batch_y)
 
+                if self.add_loss == None:
+                    batch_pred = torch.sigmoid(batch_pred)
+                elif self.add_loss == "ocsoftmax":
+                    ocsoftmaxloss, batch_pred = ocsoftmax(feat, batch_y)
+                    batch_loss = ocsoftmaxloss
+                
                 test_running_loss += batch_loss.item() * batch_size
-
-                batch_pred = torch.sigmoid(batch_pred)
-                batch_pred_label = (batch_pred + 0.5).int()
-                num_correct += (batch_pred_label == batch_y.int()).sum(dim=0).item()
+                y_pred = torch.concat([y_pred, batch_pred.detach()], dim=0)
+                y = torch.concat([y, batch_y.detach()], dim=0)
 
             if num_total == 0:
                 num_total = 1
-
             test_running_loss /= num_total
-            test_acc = 100 * (num_correct / num_total)
+
+            # EER for softmax 
+            if self.add_loss == None:
+                y_for_eer = 1 - y
+                thresh, val_eer, fpr, tpr = calculate_eer(
+                    y=y_for_eer.cpu().numpy(),
+                    y_score=y_pred.cpu().numpy(),
+                )
+            # EER for ocsoftmax
+            else:
+                val_eer, thresh = compute_ocsoftmax_eer(y=y.squeeze(1).cpu().numpy(), y_score=y_pred.cpu().numpy())
+
             LOGGER.info(
-                f"Epoch [{epoch+1}/{self.epochs}]: test/loss: {test_running_loss}, test/accuracy: {test_acc}, test/eer: {eer_val}"
+                f"Epoch [{epoch+1}/{self.epochs}]: test/loss: {test_running_loss}, test/eer: {val_eer:.4f}, threshold: {thresh:.4f}"
             )
 
-            if best_model is None or test_acc > best_acc:
-                best_acc = test_acc
+            if best_model is None or val_eer < best_eer:
+                best_eer = val_eer
                 best_model = deepcopy(model.state_dict())
+                if self.add_loss == "ocsoftmax":
+                    best_loss_model = deepcopy(ocsoftmax.state_dict())
 
             LOGGER.info(
-                f"[{epoch:04d}]: {running_loss} - train acc: {train_accuracy} - test_acc: {test_acc}"
+                f"[{epoch:04d}]: train/loss: {running_loss} - test/loss: {test_running_loss} - test/eer: {val_eer:.4f} - threshold: {thresh:.4f}"
             )
 
         model.load_state_dict(best_model)
-        return model
+
+        if self.add_loss == "ocsoftmax":
+            ocsoftmax.load_state_dict(best_loss_model)
+
+        return model, ocsoftmax
