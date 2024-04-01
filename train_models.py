@@ -160,9 +160,6 @@ def main(args):
     train_nn(
         datasets_paths=[
             args.asv_path,
-            args.wavefake_path,
-            args.celeb_path,
-            args.asv19_path,
         ],
         device=device,
         amount_to_use=(args.train_amount, args.test_amount),
@@ -248,7 +245,6 @@ def parse_args():
                          default=default_add_loss,
                          )
 
-    parser.add_argument("--gpu", type=str, help="GPU index (default: {default})", default="1")
 
     return parser.parse_args()
 

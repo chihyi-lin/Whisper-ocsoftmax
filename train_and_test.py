@@ -109,7 +109,6 @@ def parse_args():
                          default=default_add_loss,
                          )
 
-    parser.add_argument("--gpu", type=str, help="GPU index (default: {default})", default="1")
    
     return parser.parse_args()
 
