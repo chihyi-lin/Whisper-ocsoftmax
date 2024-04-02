@@ -56,14 +56,14 @@ def train_nn(
     model_dir: Optional[Path] = None,
     amount_to_use: Tuple[Optional[int], Optional[int]] = (None, None),
     config_save_path: str = "configs",
-    add_loss: str = None
+    add_loss: str = None,
+    current_time: str = None
 ) -> Tuple[str, str]:
     logging.info("Loading data...")
     model_config = config["model"]
     model_name, model_parameters = model_config["name"], model_config["parameters"]
     optimizer_config = model_config["optimizer"]
 
-    timestamp = time.time()
     checkpoint_path = ""
     loss_model_checkpoint_path = None
 
@@ -108,7 +108,7 @@ def train_nn(
     )
 
     if model_dir is not None:
-        save_name = f"model__{model_name}__{timestamp}"
+        save_name = f"model__{model_name}__{current_time}"
         save_model(
             model=current_model,
             loss_model=loss_model,
@@ -124,7 +124,7 @@ def train_nn(
         config["checkpoint"] = {"path": checkpoint_path}
         if loss_model != None:
             config["loss_model_checkpoint"] = {"path": loss_model_checkpoint_path}
-        config_name = f"model__{model_name}__{timestamp}.yaml"
+        config_name = f"model__{model_name}__{current_time}.yaml"
         config_save_path = str(Path(config_save_path) / config_name)
         with open(config_save_path, "w") as f:
             yaml.dump(config, f)

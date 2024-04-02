@@ -35,6 +35,7 @@ openai whisper (git+https://github.com/openai/whisper.git@7858aa9c08d98f75575035
 ```
 
 ### Supported models
+Only supported MesoNet and ResNet. Other models still need to be adapted in src to get an extra embeddings for training.
 
 The following list concerns models and its names to select it supported by this repository:
 * SpecRNet - `specrnet`,

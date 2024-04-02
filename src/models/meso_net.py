@@ -107,9 +107,9 @@ class MesoInception4(nn.Module):
         x = x.view(x.size(0), -1) #(Batch, 16*8*8)
         x = self.dropout(x)
 
-        x = nn.AdaptiveAvgPool1d(self.fc1_dim)(x)
-        feat = self.fc1(x) #(Batch, 16)  ### <-- o tu
+        feat = nn.AdaptiveAvgPool1d(self.fc1_dim)(x)   ### <-- new output embeddings for ocsoftmax (Batch, 1024)
         x = feat
+        x = self.fc1(x) #  <-- old output embeddings for ocsoftmax (Batch, 16)
         x = self.leakyrelu(x)
         x = self.dropout(x)
         x = self.fc2(x)

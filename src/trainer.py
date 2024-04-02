@@ -44,11 +44,7 @@ class OCSoftmax(nn.Module):
 
 
 LOGGER = logging.getLogger(__name__)
-file_handler = logging.FileHandler('./trained_models/training.log')
-file_handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-LOGGER.addHandler(file_handler)
+
 
 class Trainer:
     def __init__(
@@ -72,7 +68,7 @@ class Trainer:
 
 
 def forward_and_loss(model, criterion, batch_x, batch_y, **kwargs):
-    # get "feat" [8, 16] from model for ocsoftmax instead of batch_out [8, 1]
+    # get "feat" [8, 1024] from model for ocsoftmax instead of batch_out [8, 1]
     feat, batch_out = model(batch_x)
     batch_loss = criterion(batch_out, batch_y)
     return feat, batch_out, batch_loss
@@ -114,7 +110,7 @@ class GDTrainer(Trainer):
         optim = self.optimizer_fn(model.parameters(), **self.optimizer_kwargs)
 
         if self.add_loss == "ocsoftmax":
-            ocsoftmax = OCSoftmax(feat_dim=16).to(self.device)  # feat_dim == feat.size(1)
+            ocsoftmax = OCSoftmax(feat_dim=1024).to(self.device)  # feat_dim == feat.size(1)
             ocsoftmax.train()
             ocsoftmax_optimzer = torch.optim.SGD(ocsoftmax.parameters(), lr=self.optimizer_kwargs["lr"])
 
