@@ -50,10 +50,10 @@ def evaluate_nn(
         model.load_state_dict(torch.load(model_paths))
     model = model.to(device)
     # Load ocsoftmax model
-    if len(loss_model_path):
-        ocsoftmax = OCSoftmax(feat_dim=16).to(device)
+    if loss_model_path != None:
+        ocsoftmax = OCSoftmax(feat_dim=1024).to(device)
         ocsoftmax.load_state_dict(torch.load(loss_model_path))
-    ocsoftmax = ocsoftmax.to(device)
+        ocsoftmax = ocsoftmax.to(device)
 
     data_val = get_dataset(
         datasets_paths=datasets_paths,
@@ -110,15 +110,13 @@ def evaluate_nn(
 
     # EER for softmax
     if loss_model_path == None:
-        y_for_eer = 1 - y
-
-        thresh, eer, fpr, tpr = metrics.calculate_eer(
-            y=y_for_eer.cpu().numpy(),
-            y_score=y_pred.cpu().numpy(),
+        eer, thresh = metrics.calculate_eer(
+            y=y.cpu().numpy(),
+            y_score=y_pred.squeeze(1).cpu().numpy(),
         )
     # EER for ocsoftmax
     else:
-        eer, thresh = metrics.compute_ocsoftmax_eer(
+        eer, thresh = metrics.calculate_eer(
             y=y.cpu().numpy(),
             y_score=y_pred.cpu().numpy())
 

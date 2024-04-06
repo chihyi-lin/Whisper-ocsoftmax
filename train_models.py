@@ -118,6 +118,8 @@ def train_nn(
         checkpoint_path = str(model_dir.resolve() / save_name / "ckpt.pth")
         if loss_model != None:
             loss_model_checkpoint_path = str(model_dir.resolve() / save_name / "ocsoftmax_ckpt.pth")
+        else:
+            loss_model_checkpoint_path = None
 
     # Save config for testing
     if model_dir is not None:

@@ -10,7 +10,7 @@ model:
     freeze_encoder: false
     input_channels: 2
     fc1_dim: 1024
-    frontend_algorithm: ["lfcc"]
+    frontend_algorithm: ["mfcc"]  # ['lfcc']
   optimizer:
     lr: 1.0e-06
     weight_decay: 0.0001

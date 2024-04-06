@@ -123,7 +123,7 @@ def setup_seed(random_seed, cudnn_deterministic=True):
         torch.backends.cudnn.benchmark = False
 
 class ResNet(nn.Module):
-    def __init__(self, num_nodes, enc_dim, resnet_type='18', nclasses=2):
+    def __init__(self, num_nodes, enc_dim, resnet_type='18', nclasses=2, frontend_algorithm=None):
         self.in_planes = 16
         super(ResNet, self).__init__()
 
@@ -196,7 +196,7 @@ class ResNet(nn.Module):
 
 class FrontendResNet(ResNet):
     def __init__(self, device: str="cuda", **kwargs):
-        super.__init__(**kwargs)
+        super().__init__(**kwargs)
         self.device = device
         frontend_name = kwargs.get("frontend_algorithm", [])
         self.frontend = frontends.get_frontend(frontend_name)
