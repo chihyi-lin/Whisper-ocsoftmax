@@ -89,7 +89,7 @@ class SimpleAudioFakeDataset(Dataset):
 
         return_data = [waveform, sample_rate]
         if self.return_label:
-            label = 1 if label == "bonafide" else 0
+            label = 0 if label == "bonafide" else 1
             return_data.append(label)
 
         if self.return_meta:
