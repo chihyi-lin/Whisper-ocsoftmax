@@ -128,7 +128,7 @@ def evaluate_nn(
     # auc_label = f"eval/auc"
 
     logging.info(
-        f"{eer_label}: {eer:.4f}, threshold: {thresh:.4f}"
+        f"{eer_label}: {eer:.4f}, threshold: {-thresh}"
     )
 
 

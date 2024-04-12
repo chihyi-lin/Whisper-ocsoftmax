@@ -249,7 +249,7 @@ class GDTrainer(Trainer):
                     y_score=y_pred.cpu().numpy())
 
             LOGGER.info(
-                f"Epoch [{epoch+1}/{self.epochs}]: test/loss: {test_running_loss}, test/eer: {val_eer:.4f}, threshold: {thresh:.4f}"
+                f"Epoch [{epoch+1}/{self.epochs}]: test/loss: {test_running_loss}, test/eer: {val_eer:.4f}, threshold: {-thresh}"
             )
 
             if best_model is None or val_eer < best_eer:
@@ -259,7 +259,7 @@ class GDTrainer(Trainer):
                     best_loss_model = deepcopy(ocsoftmax.state_dict())
 
             LOGGER.info(
-                f"[{epoch:04d}]: train/loss: {running_loss} - test/loss: {test_running_loss} - test/eer: {val_eer:.4f} - threshold: {thresh:.4f}"
+                f"[{epoch:04d}]: train/loss: {running_loss} - test/loss: {test_running_loss} - test/eer: {val_eer:.4f} - threshold: {-thresh}"
             )
 
         model.load_state_dict(best_model)
