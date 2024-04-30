@@ -2,7 +2,7 @@ Guarding Against Deepfake Audio with One-Class Softmax
 ===============
 The repository is adapted with one-class softmax from [deepfake-whisper-features](https://github.com/piotrkawa/deepfake-whisper-features).
 
-This is the sub-repository of the project [Guarding Against Deepfake Audio with One-Class Softmax](https://github.com/chihyi-lin/One-Class-Softmax). 
+This repository is mainly used for the experiment of MFCC+Whisper+MesoNet-OCSoftmax from the project [Guarding Against Deepfake Audio with One-Class Softmax](https://github.com/chihyi-lin/One-Class-Softmax). 
 
 ## Requirements
 (Follow the original deepfake-whisper-features repo.)
